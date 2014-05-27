@@ -24,6 +24,7 @@ fi
 
 cd log/;
 touch main.log;
+echo "" > main.log;
 cd ..;
 
 echo "@@@@@@@@@ Script initiated @@@@@@@@" >> log/main.log;
@@ -49,13 +50,13 @@ echo "File divided into equal size chunk" >> log/main.log;
 #################################### Moving file into the master folder #####################################
 
 echo "Copying chunk 1 to master folder" >> log/main.log;
-cp newaa ../data/;
+mv newaa ../data/;
 sleep 5;
 echo "Copying chunk 2 to master folder " >> log/main.log;
-cp newab ../data/;
+mv newab ../data/;
 sleep 5;
 echo "Copying chunk 3 to master folder " >> log/main.log;
-cp newac ../data/;
+mv newac ../data/;
 sleep 5;
 echo "All chunks moved to master folder " >> log/main.log;
 
@@ -146,15 +147,28 @@ done
 
 wait $pid_1 $pid_2 $pid_3;
 
-echo "Finishing work of all VM's" >> log/main.log;
+echo "Removing split files"  >> log/main.log;
+rm ../data/new*;
+echo "Finalizing work of all VM's" >> log/main.log;
+
+################## Merging the individual file for the largevm processing ##################
+
+cat ../data/v1 >> ../data/out;
+cat ../data/v2 >> ../data/out;
+cat ../data/v3 >> ../data/out;
+
+rm ../data/v1;
+rm ../data/v2;
+rm ../data/v3;
+
 
 echo "Exiting successfully" >> log/main.log;
 
-###################### Wrapping up everything ##################################
-echo "Wrapping up everything now" >> log/main.log;
+###################### Wrapping up every worker vm ##################################
+echo "Wrapping up every worker vm now" >> log/main.log;
 dir=`ls | grep v | head -n 1`;
 if [ -z $dir ]; then
-	echo "No more directory to delete finishing everything " >> log/main.log;
+	echo "No more directory to delete finalizing everything " >> log/main.log;
 else
 	while [ ! -z $dir ]
 	do
@@ -168,6 +182,106 @@ else
 		dir=`ls | grep v | head -n 1`;
 	done
 fi
+############### Removal of boxes from vagrant service ############################### 
+echo "Removing vagrant boxes" >> log/main.log;
+count=3;
 
+while [ $count -ne 0 ]
+do
+	echo "Removing vagrant box$count.box" >> log/main.log;
+	vagrant box remove box$count.box >> log/main.log;
+	sleep 5;
+	count=`expr $count \- 1`;
+done
+
+############# Boxes removed ##########################################################
+
+######################## Spawning large vm ###########################################
+echo "Spawning box with large ram to process the merge file " >> log/main.log;
+
+
+#### Making directory ##############
+echo "Creating directory for the large VM" >> log/main.log;
+mkdir v1;
+echo "Directory created" >> log/main.log;
+
+
+#### Copying vagrantfile ###########
+echo "Copying VagrantFile for large VM" >> log/main.log;
+cp ../VagrantFile v1/;
+sleep 2;
+echo "Vagrant file Copied" >> log/main.log;
+
+#### Copying package.box ##########
+echo "Copying package box to large machine" >> log/main.log;
+cp ../package.box v1/;
+echo "Copied package box" >> log/main.log;
+
+echo "Entering into the directory of large VM" >> log/main.log;
+cd v1;
+echo "Entered into the directory of large VM " >> ../log/main.log;
+
+###### Adding the box ############# 
+echo "Adding box to the vagrant service for large VM" >> ../log/main.log;
+vagrant box add package.box --name box1.box >> ../log/main.log &
+pid=$!;
+wait $pid;
+echo "Box added for large vm" >> ../log/main.log;
+
+##### Large VM UP ##############
+echo "Large VM going up be safe !!!! " >> ../log/main.log;
+vagrant up >> ../log/main.log &
+pid=$!;
+wait $pid;
+echo "Large VM is up" >> ../log/main.log;
+
+cd ..;
+echo "Out of Large Vm directory" >> log/main.log;
+
+
+####### Work for largevm ##############
+echo "Creating worker file for largevm " >> log/main.log;
+echo "cp /sync_folder/out ." >> work_lm.sh;
+echo "awk '{print \$2}' out | sort | uniq -c | sort -nr | head -n 30 > final_result;" >> work_lm.sh;
+echo "sudo cp final_result /sync_folder/" >> work_lm.sh;
+echo "Worker file created for largevm " >> log/main.log;
+
+echo "Processing up large vm with worker file" >> log/main.log;
+echo "Entered into the directory of largevm" >> log/main.log;
+cd v1;
+echo "Starting ssh connection with largevm" >> ../log/main.log;
+############# SSH and work ############
+vagrant ssh < ../work_lm.sh &
+pid=$!;
+wait $pid;
+echo "Processing completed by largevm" >> ../log/main.log;
+cd ..;
+echo "Out of the directory of largevm" >> log/main.log;
+
+
+echo "Entering into the largevm directory" >> log/main.log; 
+cd v1;
+echo "Destroying the largevm" >> ../log/main.log;
+
+############# Destroying Vagrant ###############
+vagrant destroy -f;
+sleep 10;
+echo "Destroyed largevm :(" >> ../log/main.log;
+cd ..;
+echo "Out of directory of largevm"; >> log/main.log;
+
+#### Removing all files #########################
+echo "Removing the large vm directory" >> log/main.log;
+rm -r v1/;
+echo "Removed large vm directory"  >> log/main.log;
+
+echo "Removing worker files" >> log/main.log;
+rm work*;
+
+echo "Destroying box for largevm" >> log/main.log;
+vagrant box destroy box1.box >> log/main.log;
+sleep 3;
+
+########### Saving logs thank you #############
 date=`date +%s`;
-cp log/main.log log/"$date".log;
+mv log/main.log log/"$date".log;
