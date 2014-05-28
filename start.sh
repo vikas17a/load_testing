@@ -264,6 +264,7 @@ cd v1;
 echo "Destroying the largevm" >> ../log/main.log;
 
 ############# Destroying Vagrant ###############
+
 vagrant destroy -f >> ../log/main.log;
 sleep 10;
 echo "Destroyed largevm :(" >> ../log/main.log;
@@ -279,10 +280,9 @@ echo "Total connection in peak hour are $hour" >> log/main.log;
 min=`expr $hour \/ 60`;
 echo "Total connection on avg. minute from peak hour are $min" >> log/main.log;
 act_min=`cat $1 | cut -d[ -f2 | cut -d] -f1 | awk -F: '{print $2":"$3}' | sort -nk1 -nk2 | uniq -c | awk '{ if ($1 > 10) print $0}' | sort -r | head -n 1 | awk '{print $1}'`;
-sec=`expr $min \/ 60`;
+sec=`expr $act_min \/ 60`;
 echo "Total connection on avg. second from peak hour are $sec"  >> log/main.log;
-act_sec=`expr $act_min \/ 60`;
-act_sec=`expr $act_sec \ + 1`;
+act_sec=`cat $1 | cut -d[ -f2 | cut -d] -f1 | awk -F: '{print $2":"$3":"$4}' | sort -nk1 -nk2 | uniq -c | awk '{ if ($1 > 10) print $0}' | sort -r | head -n 1 | awk '{print $1}'`;
 sec=`echo $act_sec`;
 echo "Round of total connection on avg. second from peak hour are $sec " >> log/main.log;
 
@@ -295,6 +295,13 @@ else
 	touch load.sh;
 fi
 
+if [ -f "session.log" ]; then
+	rm session.log;
+	touch session.log;
+else
+	touch session.log;
+fi
+
 count=1;
 
 while read line
@@ -303,13 +310,19 @@ do
 	url=`echo $line | awk '{print $2}'`;
 	echo "Calculated total number of request for $url are $total_req" >> log/main.log;
 	#num_con=`expr $total_req \* 3`;
-	echo "httperf --server=\"www.localsmokehk.com\" --uri=\"$url\" --rate=\"$sec\" --num-con=\"$total_req\" --num-call=\"1\" > result &" >> load.sh;
-	echo "pid=\$!;" >> load.sh;
-	echo "wait \$pid;" >> load.sh;
-	echo "cp result /sync_folder/res$count;" >> load.sh;
+	#url=`echo $line | awk '{print $2}'`;
+	req=`cat $1 | grep "$url" | cut -d[ -f2 | cut -d ] -f1 | awk -F: '{print $2":"$3":"$4}' | sort -nk1 -nk2 | uniq -c | awk '{ if ($1 > 0) print $0}' | sort -r | head -n 1 | awk '{print $1}'`;
+	#echo $url >> session.log;
+	echo "httperf --server=\"www.localsmokehk.com\" --uri=\"$url\" --rate=\"$req\" --num-con=\"$total_req\" --num-call=\"1\" >> result &" >> load.sh;
+	echo "#pid$count=\$!;" >> load.sh;
 	count=`expr $count \+ 1`;  
 done < ../data/final_result;
 
+echo "wait" >> load.sh;
+echo "cp result /sync_folder/perf_report;" >> load.sh;
+
+
+#mv session.log ../data/;
 #######################Starting sending request####################################
 
 echo "Entering into largevm directory" >> log/main.log;
